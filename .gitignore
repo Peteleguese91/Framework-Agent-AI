@@ -1,0 +1,15 @@
+node_modules/
+dist/
+target/
+src-tauri/target/
+.idea/
+.vscode/
+*.log
+.DS_Store
+coverage/
+playwright-report/
+test-results/
+outputs/
+*.sqlite
+*.sqlite-shm
+*.sqlite-wal
