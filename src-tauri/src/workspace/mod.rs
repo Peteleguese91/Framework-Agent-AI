@@ -137,7 +137,7 @@ impl WorkspaceManager {
         }
         s
     }
-    fn root(&self) -> Result<&Path, String> {
+    pub(crate) fn root(&self) -> Result<&Path, String> {
         self.root
             .as_deref()
             .ok_or_else(|| "No workspace is open".into())

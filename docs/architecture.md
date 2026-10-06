@@ -49,4 +49,19 @@ Phase 3 extends the same boundary to atomic writes, rename, delete, stat, and bo
 
 ## Provider boundary
 
-`ModelProvider` will expose model discovery, health checks, chat streaming, and normalized tool calls. LM Studio, Ollama, and generic OpenAI-compatible adapters share one transport core but retain capability detection. Vision and coding models route independently.
+Phase 6 implements `ModelProvider` in TypeScript with a registry containing LM Studio and a generic OpenAI-compatible adapter. The shared Rust transport owns endpoint validation, optional bearer authentication, `/models` discovery, health checks, chat completion, SSE streaming, cancellation, bounded retry, structured errors, and sanitized `MODEL` logs.
+
+Provider messages and tool definitions cross Tauri IPC as typed values. Returned tool calls are checked against the offered tool name and its basic JSON Schema before reaching the UI. The direct chat displays calls for inspection and never executes them. Provider settings and capability overrides are persisted in browser storage; API keys remain only in Rust process memory for the current session. See [models.md](models.md) and [model-providers.md](model-providers.md).
+
+## Terminal execution
+
+Phase 4 introduces a Rust TerminalManager with independent PTY sessions and a separate structured, timeout-bound exec path. See [terminal.md](terminal.md). User terminal sessions are normal shells; agent access remains gated pending an approval policy.
+
+
+## Platform boundaries
+
+Nobara Linux is the primary platform. Windows 11 is secondary. Terminal operating-system behavior lives in dedicated Linux and Windows modules behind shared IPC and result types. Bundle targets are selected with Tauri platform-specific configuration files. See [platforms.md](platforms.md).
+
+## Filesystem tools
+
+Phase 5 adds a Rust filesystem tool boundary with a typed frontend caller. Operations remain confined to the active workspace, with explicit limits and user-only access until agent approvals exist. See [tools.md](tools.md).

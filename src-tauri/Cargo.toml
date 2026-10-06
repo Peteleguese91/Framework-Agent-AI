@@ -21,12 +21,18 @@ tauri-plugin-dialog = "2"
 thiserror = "2"
 ignore = "0.4"
 content_inspector = "0.2"
-
-[dev-dependencies]
+portable-pty = "0.9"
+libc = "0.2"
 tempfile = "3"
+globset = "0.4"
+reqwest = { version = "0.12", features = ["json", "stream"] }
+futures-util = "0.3"
+tokio = { version = "1", features = ["sync", "rt-multi-thread"] }
+
 
 [profile.release]
 panic = "abort"
 codegen-units = 1
 lto = true
 strip = true
+
