@@ -5,7 +5,7 @@ import { loadProviderSettings } from "./modelStore";
 describe("model configuration", () => {
   it("accepts the Qwen-oriented defaults", () => {
     expect(providerSettingsSchema.parse(DEFAULT_SETTINGS)).toMatchObject({
-      provider: "lm-studio", baseUrl: "http://localhost:1234/v1", temperature: 0.7,
+      provider: "gravityforge-local", baseUrl: "http://127.0.0.1/v1", temperature: 0.7,
       topP: 0.8, topK: 20, repetitionPenalty: 1.05, contextLength: 32768,
     });
   });

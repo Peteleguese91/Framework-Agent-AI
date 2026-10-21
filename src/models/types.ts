@@ -6,7 +6,7 @@ export const modelCapabilitiesSchema = z.object({
 });
 
 export const providerSettingsSchema = z.object({
-  provider: z.enum(["lm-studio", "openai-compatible"]), baseUrl: z.string().url(), model: z.string(),
+  provider: z.enum(["gravityforge-local", "ollama", "lm-studio", "openai-compatible"]), baseUrl: z.string().url(), model: z.string(),
   temperature: z.number().min(0).max(2), topP: z.number().min(0).max(1),
   topK: z.number().int().min(0).max(1000).nullable(), repetitionPenalty: z.number().min(0.1).max(2).nullable(),
   contextLength: z.number().int().min(1024).max(1_048_576), maxOutputTokens: z.number().int().min(1).max(131_072),
@@ -17,10 +17,10 @@ export type ProviderSettings = z.infer<typeof providerSettingsSchema>;
 export type ModelCapabilities = z.infer<typeof modelCapabilitiesSchema>;
 
 export const DEFAULT_SETTINGS: ProviderSettings = {
-  provider: "lm-studio", baseUrl: "http://localhost:1234/v1", model: "", temperature: 0.7, topP: 0.8,
+  provider: "gravityforge-local", baseUrl: "http://127.0.0.1/v1", model: "", temperature: 0.7, topP: 0.8,
   topK: 20, repetitionPenalty: 1.05, contextLength: 32_768, maxOutputTokens: 4_096, timeoutMs: 120_000,
   retryOnce: true,
-  capabilities: { supportsTools: true, supportsVision: false, supportsStreaming: true, supportsReasoning: false, contextWindow: 32_768, maxOutputTokens: 4_096 },
+  capabilities: { supportsTools: false, supportsVision: false, supportsStreaming: false, supportsReasoning: false, contextWindow: 32_768, maxOutputTokens: 4_096 },
 };
 
 export const toolDefinitionSchema = z.object({

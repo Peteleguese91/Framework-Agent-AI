@@ -10,7 +10,7 @@ export function TopBar() {
   const toggleTheme = useUiStore((state) => state.toggleTheme);
   const choose = useWorkspaceStore((state) => state.choose);
   const hasDirty = useEditorStore((state) => state.tabs.some((tab) => tab.dirty));
-  const { settings, models, connection, selectModel, openSettings } = useModelStore();
+  const { settings, models, connection, runtime, selectModel, openSettings } = useModelStore();
   const { mode, task, setMode } = useAgentStore();
   const taskActive = !!task && !["COMPLETED", "FAILED", "CANCELLED"].includes(task.status);
 
@@ -29,7 +29,10 @@ export function TopBar() {
       </label>
       <span className={`model-status ${connection}`} title={`Model: ${connection}`} />
       <div className="agent-mode" aria-label="Agent mode">
-        {(["ASK", "AGENT", "AUTONOMOUS"] as const).map((value) => <button key={value} className={mode === value ? "mode-active" : ""} disabled={taskActive} onClick={() => setMode(value)}>{value === "AUTONOMOUS" ? "Autonomous" : value[0] + value.slice(1).toLowerCase()}</button>)}
+        {(["ASK", "AGENT", "AUTONOMOUS"] as const).map((value) => {
+          const unavailable = value !== "ASK" && settings.provider === "gravityforge-local" && !runtime.capabilities.agentMode;
+          return <button key={value} className={mode === value ? "mode-active" : ""} disabled={taskActive || unavailable} title={unavailable ? "Run capability testing first" : undefined} onClick={() => setMode(value)}>{value === "AUTONOMOUS" ? "Autonomous" : value[0] + value.slice(1).toLowerCase()}</button>;
+        })}
       </div>
       <div className="top-spacer" />
       <button className="icon-button" onClick={toggleBottomPanel} title="Toggle bottom panel">▱</button>

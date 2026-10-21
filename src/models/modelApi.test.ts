@@ -12,7 +12,7 @@ describe("model IPC contract", () => {
     invoke.mockResolvedValue([{ id: "qwen3-coder", ownedBy: "local" }]);
     await expect(modelApi.listModels(DEFAULT_SETTINGS)).resolves.toEqual([{ id: "qwen3-coder", ownedBy: "local" }]);
     expect(invoke).toHaveBeenCalledWith("model_list_models", {
-      config: expect.objectContaining({ baseUrl: "http://localhost:1234/v1" }) as unknown,
+      config: expect.objectContaining({ provider: "gravityforge-local", baseUrl: "http://127.0.0.1/v1" }) as unknown,
     });
   });
 

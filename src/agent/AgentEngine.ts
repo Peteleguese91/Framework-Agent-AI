@@ -16,11 +16,12 @@ export interface AgentEngineOptions {
   runner: ModelTurnRunner; registry: ToolRegistry; approvals: ApprovalManager; workspace: WorkspaceInfo;
   limits?: Partial<AgentLimits>; onEvent?: (event: AgentEvent, task: AgentTask) => void;
   onTask?: (task: AgentTask) => void;
+  onStop?: () => Promise<void>;
 }
 
 const now = () => Date.now();
 const id = () => globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random().toString(16).slice(2)}`;
-const stable = (value: unknown) => JSON.stringify(value, Object.keys((value ?? {}) as object).sort());
+const stable = (value: unknown) => JSON.stringify(value, Object.keys(value ?? {}).sort());
 
 function initialPlan(goal: string): string[] {
   const readOnly = /analy|explain|structure|inspect|review|descri|spiega|struttura/iu.test(goal) && !/fix|correct|create|write|modif|build error|correggi|crea/iu.test(goal);
@@ -77,7 +78,6 @@ export class AgentEngine {
       try {
         const turn = await this.options.runner.run(this.messages, this.options.registry.definitions());
         if (this.stopped) break;
-        this.consecutiveErrors = 0;
         if (!turn.message.content && turn.toolCalls.length === 0) {
           this.consecutiveErrors += 1;
           this.task.errors.push("Model returned an empty response");
@@ -88,6 +88,7 @@ export class AgentEngine {
         if (turn.toolCalls.length > 0) {
           for (const call of turn.toolCalls) {
             if (this.stopped) break;
+            await this.waitIfPaused();
             await this.executeTool(call);
           }
           continue;
@@ -114,6 +115,7 @@ export class AgentEngine {
         this.emit("agent.completed", content || "Task completed"); return this.task;
       } catch (error) {
         const modelError = normalizeModelError(error);
+        if (modelError.message.startsWith("MAX_")) return this.fail(modelError.message);
         if (modelError.code === "CANCELLED" && this.stopped) break;
         if (modelError.code === "CONTEXT_OVERFLOW" && !this.contextRetry) {
           this.contextRetry = true; this.messages = this.context.compact(this.messages); continue;
@@ -129,6 +131,7 @@ export class AgentEngine {
 
   private async executeTool(call: ToolCall): Promise<void> {
     if (this.task.toolCalls.length >= this.limits.maxToolCalls) throw new Error("MAX_TOOL_CALLS reached");
+    if (call.function.name.startsWith("computer.") && this.task.toolCalls.filter((item) => item.name.startsWith("computer.")).length >= this.limits.maxComputerSteps) throw new Error("MAX_COMPUTER_STEPS reached");
     let checked: ReturnType<ToolRegistry["validate"]>;
     try { checked = this.options.registry.validate(call.function.name, call.function.arguments); }
     catch (error) { this.recordToolError(call, error instanceof z.ZodError ? error.issues[0]?.message ?? "Malformed arguments" : String(error)); return; }
@@ -138,11 +141,14 @@ export class AgentEngine {
     if (repeated > this.limits.maxSameToolRetries) {
       this.recordToolError(call, "Repeated tool call blocked. Reassess using new evidence."); return;
     }
-    const record = { id: call.id, name: call.function.name, arguments: checked.argumentsValue, risk: checked.risk, startedAt: now() };
+    const record: AgentTask["toolCalls"][number] = { id: call.id, name: call.function.name, arguments: checked.argumentsValue, risk: checked.risk, startedAt: now() };
     this.task.toolCalls.push(record); this.emit("agent.tool.requested", call.function.name, { tool: call.function.name, risk: checked.risk });
     let approved = false;
     if (this.options.approvals.requiresApproval(this.task.mode, checked.risk)) {
-      const request: ApprovalRequest = { id: call.id, tool: call.function.name, arguments: checked.argumentsValue, risk: checked.risk, reason: "Dangerous actions always require explicit approval" };
+      const approvalArguments = call.function.name === "computer.type_text"
+        ? { operation: "type_text", text: "[REDACTED]", characters: String((checked.argumentsValue as { text?: string }).text ?? "").length }
+        : checked.argumentsValue;
+      const request: ApprovalRequest = { id: call.id, tool: call.function.name, arguments: approvalArguments, risk: checked.risk, reason: "Dangerous actions always require explicit approval" };
       this.setStatus("WAITING_APPROVAL"); this.emit("agent.approval.requested", request.reason, { tool: request.tool, risk: request.risk });
       approved = await this.options.approvals.authorize(this.task.mode, request);
       if (this.stopped) return;
@@ -153,12 +159,16 @@ export class AgentEngine {
     this.emit("agent.tool.started", call.function.name, { tool: call.function.name, risk: checked.risk });
     const started = performance.now();
     try {
-      const result = await checked.tool.handler(checked.argumentsValue, { mode: this.task.mode, approved });
+      const result = await Promise.race([
+        checked.tool.handler(checked.argumentsValue, { mode: this.task.mode, approved }),
+        new Promise<never>((_, reject) => setTimeout(() => reject(new Error(`Tool timed out after ${checked.tool.timeoutMs} ms`)), checked.tool.timeoutMs)),
+      ]);
       const observation = this.observation(call.function.name, "success", summarizeResult(call.function.name, result), result, performance.now() - started);
       record.finishedAt = now(); record.observation = observation; this.task.observations.push(observation);
       for (const path of mutationPath(call.function.name, checked.argumentsValue)) if (!this.task.modifiedFiles.includes(path)) this.task.modifiedFiles.push(path);
       if (call.function.name === "terminal.exec") this.trackCommand(checked.argumentsValue, result);
       this.messages.push({ role: "tool", content: JSON.stringify(observation), toolCallId: call.id, name: call.function.name, toolCalls: [] });
+      this.consecutiveErrors = 0;
       this.finishCurrentStep(true); this.emit("agent.tool.completed", observation.summary, { tool: call.function.name, risk: checked.risk });
     } catch (error) {
       record.finishedAt = now(); this.recordToolError(call, error instanceof Error ? error.message : String(error), performance.now() - started, record);
@@ -166,7 +176,7 @@ export class AgentEngine {
   }
 
   private observation(tool: string, status: "success" | "error", summary: string, data: unknown, durationMs: number): ToolObservation {
-    const serialized = JSON.stringify(data); const limit = this.limits.maxObservationBytes; const truncated = serialized.length > limit;
+    const serialized = data === undefined ? "" : JSON.stringify(data); const limit = this.limits.maxObservationBytes; const truncated = serialized.length > limit;
     return { tool, status, summary, data: truncated ? serialized.slice(0, limit) : data, truncated, durationMs: Math.round(durationMs) };
   }
   private recordToolError(call: ToolCall, message: string, durationMs = 0, existing?: AgentTask["toolCalls"][number]): void {
@@ -174,6 +184,7 @@ export class AgentEngine {
     const record = existing ?? { id: call.id, name: call.function.name, arguments: call.function.arguments, risk: "DANGEROUS", startedAt: now() };
     if (!existing) this.task.toolCalls.push(record); record.finishedAt = now(); record.observation = observation;
     this.task.observations.push(observation); this.task.errors.push(message);
+    this.consecutiveErrors += 1;
     this.messages.push({ role: "tool", content: JSON.stringify(observation), toolCallId: call.id, name: call.function.name, toolCalls: [] });
     this.finishCurrentStep(false); this.emit("agent.tool.failed", message, { tool: call.function.name, risk: record.risk });
   }
@@ -193,7 +204,7 @@ export class AgentEngine {
   pause(): void { if (["RUNNING", "VERIFYING"].includes(this.task.status)) { this.paused = true; this.setStatus("PAUSED"); } }
   resume(): void { if (!this.paused) return; this.paused = false; this.setStatus("RUNNING"); this.resumeWaiter?.(); this.resumeWaiter = null; }
   provideUserInput(input: string): void { this.userWaiter?.(input); }
-  async stop(): Promise<void> { this.stopped = true; this.options.approvals.rejectAll(); this.resume(); this.userWaiter?.(""); try { await this.options.runner.cancel(); } catch { /* cancellation is best effort */ } }
+  async stop(): Promise<void> { this.stopped = true; this.options.approvals.rejectAll(); this.resume(); this.userWaiter?.(""); try { await Promise.all([this.options.runner.cancel(), this.options.onStop?.() ?? Promise.resolve()]); } catch { /* cancellation is best effort */ } }
   private waitIfPaused(): Promise<void> { return this.paused ? new Promise((resolve) => { this.resumeWaiter = resolve; }) : Promise.resolve(); }
   private cancelTask(): AgentTask { this.task.status = "CANCELLED"; this.task.finishedAt = now(); this.emit("agent.cancelled", "Task cancelled"); return this.task; }
 }

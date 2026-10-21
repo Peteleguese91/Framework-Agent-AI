@@ -4,7 +4,7 @@ GravityForge is a local-first, standalone agentic desktop IDE. It is built with 
 
 ## Current state
 
-Phase 0–3 provide the desktop IDE shell, workspace explorer, and Monaco editor. Phase 4 terminal, Phase 5 filesystem tools, and Phase 6 model providers are IMPLEMENTED / PENDING LINUX CERTIFICATION. Windows 11 is a secondary platform. Phase 7 has not started.
+Phase 0–3 provide the desktop IDE shell, workspace explorer, and Monaco editor. Phase 4 terminal, Phase 5 filesystem tools, and Phase 6 model providers are IMPLEMENTED / PENDING LINUX CERTIFICATION. Phase 7 Agent Engine is IMPLEMENTED / PENDING LINUX AND MODEL INTEGRATION CERTIFICATION. Windows 11 is a secondary platform.
 
 ## Prerequisites
 

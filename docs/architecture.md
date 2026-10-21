@@ -29,7 +29,7 @@ Backend modules live under `src-tauri/src/`. Planned capability domains are `fil
 
 ## Agent runtime
 
-The orchestrator is implemented in TypeScript as a state machine because provider SDKs, OpenAI-compatible streaming, JSON schema tooling, Playwright, and plugin ecosystems are first-class there. Security-sensitive execution remains in Rust. The loop persists transitions and emits sanitized activity events; private model reasoning is never stored or shown.
+The orchestrator is implemented in TypeScript as a state machine because provider SDKs, OpenAI-compatible streaming, JSON schema tooling, Playwright, and plugin ecosystems are first-class there. Security-sensitive execution remains in Rust. Phase 7 emits sanitized activity events and stores bounded task summaries; private model reasoning is never stored or shown. Full transition persistence remains target architecture for a later phase.
 
 ## Persistence
 
@@ -50,6 +50,8 @@ Phase 3 extends the same boundary to atomic writes, rename, delete, stat, and bo
 ## Provider boundary
 
 Phase 6 implements `ModelProvider` in TypeScript with a registry containing LM Studio and a generic OpenAI-compatible adapter. The shared Rust transport owns endpoint validation, optional bearer authentication, `/models` discovery, health checks, chat completion, SSE streaming, cancellation, bounded retry, structured errors, and sanitized `MODEL` logs.
+
+GravityForge Local adds an owned `llama-server` sidecar without changing AgentEngine. `LocalRuntimeManager` owns process lifecycle, dynamic loopback endpoint, readiness, crash state, logs, and capability certification. The provider layer presents GravityForge Local and Ollama; legacy identifiers remain readable during migration. See [local-runtime.md](local-runtime.md).
 
 Provider messages and tool definitions cross Tauri IPC as typed values. Returned tool calls are checked against the offered tool name and its basic JSON Schema before reaching the UI. The direct chat displays calls for inspection and never executes them. Provider settings and capability overrides are persisted in browser storage; API keys remain only in Rust process memory for the current session. See [models.md](models.md) and [model-providers.md](model-providers.md).
 

@@ -9,6 +9,9 @@ import { useUiStore } from "../ui/state/uiStore";
 import { useWorkspaceStore } from "../project/workspaceStore";
 import { ModelSettings } from "../models/ModelSettings";
 import { useModelStore } from "../models/modelStore";
+import { useComputerStore } from "../computer/computerStore";
+import { useVoiceStore } from "../voice/voiceStore";
+import { matchesVoiceShortcut } from "../voice/shortcut";
 
 export function App() {
   const bottomPanelOpen = useUiStore((state) => state.bottomPanelOpen);
@@ -16,6 +19,16 @@ export function App() {
   useEffect(() => { void initialize(); }, [initialize]);
   useEffect(() => { void useTerminalStore.getState().initialize(); }, []);
   useEffect(() => { void useModelStore.getState().initialize(); }, []);
+  useEffect(() => { void useComputerStore.getState().initialize(); }, []);
+  useEffect(() => { void useVoiceStore.getState().initialize(); return () => { void useVoiceStore.getState().disable(); }; }, []);
+  useEffect(() => {
+    let held = false;
+    const editable = (target: EventTarget | null) => target instanceof HTMLElement && ["INPUT", "TEXTAREA", "SELECT"].includes(target.tagName);
+    const down = (event: KeyboardEvent) => { const voice = useVoiceStore.getState(); if (held || editable(event.target) || !voice.settings.enabled || !matchesVoiceShortcut(event, voice.settings.shortcut)) return; event.preventDefault(); held = true; void voice.beginPushToTalk(); };
+    const up = (event: KeyboardEvent) => { const voice = useVoiceStore.getState(); if (!held || !matchesVoiceShortcut(event, voice.settings.shortcut)) return; event.preventDefault(); held = false; void voice.endPushToTalk(); };
+    window.addEventListener("keydown", down); window.addEventListener("keyup", up);
+    return () => { window.removeEventListener("keydown", down); window.removeEventListener("keyup", up); };
+  }, []);
   useEffect(() => {
     const handler = (event: KeyboardEvent) => {
       if (!(event.ctrlKey || event.metaKey) || event.code !== "Backquote") return;

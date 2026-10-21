@@ -4,8 +4,8 @@ use crate::{
     security::{canonical_workspace, resolve_existing_path},
     workspace::WorkspaceState,
 };
-use portable_pty::{native_pty_system, Child, CommandBuilder, MasterPty, PtySize, PtySystem};
-use serde::{Deserialize, Serialize};
+use portable_pty::{native_pty_system, Child, CommandBuilder, MasterPty, PtySize};
+use serde::Serialize;
 use std::{
     collections::HashMap,
     io::{Read, Write},
@@ -42,7 +42,6 @@ pub struct TerminalInfo {
 #[derive(Clone, Copy, Debug, Serialize)]
 #[serde(rename_all = "lowercase")]
 pub enum TerminalStatus {
-    Starting,
     Running,
     Exited,
     Failed,
@@ -267,12 +266,13 @@ pub fn terminal_write(
     manager: State<'_, TerminalManager>,
 ) -> Result<(), String> {
     let session = get_session(&manager, &id)?;
-    session
+    let result = session
         .writer
         .lock()
         .map_err(|_| "Terminal writer lock failed")?
         .write_all(&data)
-        .map_err(|e| format!("Terminal write failed: {e}"))
+        .map_err(|e| format!("Terminal write failed: {e}"));
+    result
 }
 
 #[tauri::command]
@@ -286,7 +286,7 @@ pub fn terminal_resize(
         return Err("Terminal size must be positive".into());
     }
     let session = get_session(&manager, &id)?;
-    session
+    let result = session
         .master
         .lock()
         .map_err(|_| "Terminal PTY lock failed")?
@@ -296,7 +296,8 @@ pub fn terminal_resize(
             pixel_width: 0,
             pixel_height: 0,
         })
-        .map_err(|e| format!("Terminal resize failed: {e}"))
+        .map_err(|e| format!("Terminal resize failed: {e}"));
+    result
 }
 
 #[tauri::command]
@@ -369,6 +370,9 @@ pub struct ExecRequest {
     pub timeout_ms: u64,
     pub env: HashMap<String, String>,
     pub actor: Option<TerminalActor>,
+    pub approval_mode: Option<String>,
+    #[serde(default)]
+    pub approved: bool,
 }
 
 impl<'de> serde::Deserialize<'de> for TerminalActor {
@@ -458,13 +462,64 @@ fn execute(root: &Path, request: ExecRequest) -> Result<ExecResult, String> {
     })
 }
 
+fn agent_command_is_dangerous(request: &ExecRequest) -> bool {
+    let name = Path::new(&request.command)
+        .file_stem()
+        .and_then(|value| value.to_str())
+        .unwrap_or("")
+        .to_ascii_lowercase();
+    let dangerous = [
+        "rm", "rmdir", "del", "erase", "sudo", "shutdown", "reboot", "mkfs", "diskpart", "format",
+        "chmod", "chown",
+    ];
+    let interpreters = [
+        "sh",
+        "bash",
+        "zsh",
+        "cmd",
+        "powershell",
+        "pwsh",
+        "python",
+        "python3",
+        "node",
+        "deno",
+    ];
+    let outside = request.args.iter().any(|argument| {
+        let path = Path::new(argument);
+        path.is_absolute()
+            || path
+                .components()
+                .any(|part| matches!(part, std::path::Component::ParentDir))
+    });
+    let destructive_git = name == "git"
+        && matches!(
+            request.args.first().map(String::as_str),
+            Some("reset" | "clean")
+        );
+    outside
+        || dangerous.contains(&name.as_str())
+        || interpreters.contains(&name.as_str())
+        || destructive_git
+}
+
 #[tauri::command]
 pub async fn terminal_exec(
     request: ExecRequest,
     workspace: State<'_, WorkspaceState>,
 ) -> Result<ExecResult, String> {
-    if !matches!(request.actor, Some(TerminalActor::User)) {
-        return Err("Agent terminal execution requires an approval policy".into());
+    if matches!(request.actor, Some(TerminalActor::Agent))
+        && !matches!(
+            request.approval_mode.as_deref(),
+            Some("AGENT" | "AUTONOMOUS")
+        )
+    {
+        return Err("Agent terminal execution requires a valid approval mode".into());
+    }
+    if matches!(request.actor, Some(TerminalActor::Agent))
+        && agent_command_is_dangerous(&request)
+        && !request.approved
+    {
+        return Err("Dangerous agent terminal execution requires explicit approval".into());
     }
     let root = workspace_root_from_state(&workspace)?;
     tauri::async_runtime::spawn_blocking(move || execute(&root, request))
@@ -484,6 +539,8 @@ mod tests {
             timeout_ms: 2000,
             env: HashMap::new(),
             actor: Some(TerminalActor::User),
+            approval_mode: None,
+            approved: false,
         }
     }
 

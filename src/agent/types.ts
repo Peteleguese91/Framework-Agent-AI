@@ -26,10 +26,12 @@ export interface AgentTask {
 export interface AgentLimits {
   maxIterations: number; maxToolCalls: number; maxConsecutiveErrors: number;
   maxSameToolRetries: number; maxObservationBytes: number;
+  maxComputerSteps: number;
 }
 export const DEFAULT_AGENT_LIMITS: AgentLimits = {
   maxIterations: 50, maxToolCalls: 100, maxConsecutiveErrors: 3,
   maxSameToolRetries: 2, maxObservationBytes: 64 * 1024,
+  maxComputerSteps: 20,
 };
 
 export type AgentEventName =

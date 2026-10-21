@@ -98,6 +98,10 @@ impl From<io::Error> for FsError {
 pub struct FsToolRequest {
     pub actor: ToolActor,
     pub action: FsAction,
+    #[serde(default)]
+    pub approval_mode: Option<String>,
+    #[serde(default)]
+    pub approved: bool,
 }
 
 #[derive(Debug, Deserialize)]
@@ -440,7 +444,9 @@ fn read_range(root: &Path, path: &str, start_byte: u64, length: u64) -> FsResult
         ));
     }
     let mut sample = Vec::new();
-    handle.by_ref().take(8192).read_to_end(&mut sample)?;
+    Read::by_ref(&mut handle)
+        .take(8192)
+        .read_to_end(&mut sample)?;
     if content_inspector::inspect(&sample).is_binary() {
         return Err(FsError::new(
             FsErrorCode::BinaryFile,
@@ -1053,11 +1059,24 @@ fn execute(root: &Path, action: FsAction) -> FsResult<FsToolResult> {
         FsAction::Glob { pattern, limit } => glob(root, &pattern, limit),
     }
 }
-fn authorize(actor: ToolActor) -> FsResult<()> {
-    if matches!(actor, ToolActor::Agent) {
+fn authorize(
+    actor: ToolActor,
+    risk: RiskLevel,
+    mode: Option<&str>,
+    approved: bool,
+) -> FsResult<()> {
+    if !matches!(actor, ToolActor::Agent) {
+        return Ok(());
+    }
+    if !matches!(mode, Some("AGENT" | "AUTONOMOUS")) {
         Err(FsError::new(
             FsErrorCode::PermissionDenied,
-            "Agent filesystem access requires an approval policy",
+            "Agent filesystem access requires a valid approval mode",
+        ))
+    } else if matches!(risk, RiskLevel::Dangerous) && !approved {
+        Err(FsError::new(
+            FsErrorCode::PermissionDenied,
+            "Dangerous agent action requires explicit approval",
         ))
     } else {
         Ok(())
@@ -1089,7 +1108,12 @@ pub async fn filesystem_tool(
     let started = Instant::now();
     let operation = request.action.name();
     let risk = request.action.risk();
-    if let Err(error) = authorize(request.actor) {
+    if let Err(error) = authorize(
+        request.actor,
+        risk,
+        request.approval_mode.as_deref(),
+        request.approved,
+    ) {
         let result = Err(error);
         log_tool(operation, request.actor, risk, &result, started);
         return result;

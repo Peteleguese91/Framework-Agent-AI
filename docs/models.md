@@ -20,7 +20,7 @@ The API key field is optional for a local LM Studio server. A supplied key lives
 
 ## Tool-call validation
 
-Phase 6 offers a harmless `square_number` schema to exercise OpenAI function calling. GravityForge validates each returned function name, JSON arguments, required fields, primitive types, arrays, enums, and additional-property restrictions covered by the schema. The Agent panel displays valid calls and labels them **Not executed**. Phase 6 has no tool execution loop.
+Phase 6 offers a harmless `square_number` schema to exercise OpenAI function calling. GravityForge validates each returned function name, JSON arguments, required fields, primitive types, arrays, enums, and additional-property restrictions covered by the schema. In ASK mode valid calls remain display-only. AGENT and AUTONOMOUS modes use the separate Phase 7 engine and registered tools.
 
 ## Error handling
 

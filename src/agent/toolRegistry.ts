@@ -5,12 +5,13 @@ import type { ExecResult } from "../terminal/types";
 import { runAgentFilesystemTool, type FilesystemAction, type FilesystemResult } from "../tools/filesystem";
 import { analyzeCommandRisk } from "./commandRisk";
 import type { AgentMode, AgentRisk } from "./types";
+import { computerApi, type ComputerRequest } from "../computer/computerApi";
 
 export interface ToolExecutionContext { mode: Exclude<AgentMode, "ASK">; approved: boolean }
-export interface AgentTool<T = unknown> {
-  name: string; description: string; schema: z.ZodType<T>; parameters: Record<string, unknown>;
-  risk: (argumentsValue: T) => AgentRisk; definitionRisk: ToolDefinition["riskLevel"]; allowedActors: readonly ["AGENT"];
-  timeoutMs: number; handler: (argumentsValue: T, context: ToolExecutionContext) => Promise<unknown>;
+export interface AgentTool {
+  name: string; description: string; schema: z.ZodType; parameters: Record<string, unknown>;
+  risk: (argumentsValue: unknown) => AgentRisk; definitionRisk: ToolDefinition["riskLevel"]; allowedActors: readonly ["AGENT"];
+  timeoutMs: number; handler: (argumentsValue: unknown, context: ToolExecutionContext) => Promise<unknown>;
 }
 
 const path = z.string().min(1);
@@ -23,12 +24,12 @@ const integer = { type: "integer" };
 function fsTool<T extends FilesystemAction>(
   name: string, description: string, schema: z.ZodType<T>, parameters: Record<string, unknown>,
   risk: AgentRisk | ((value: T) => AgentRisk), timeoutMs = 30_000,
-): AgentTool<T> {
+): AgentTool {
   return {
     name, description, schema, parameters, allowedActors: ["AGENT"], timeoutMs,
     definitionRisk: typeof risk === "function" ? "DANGEROUS" : risk === "SAFE" ? "READ" : "WRITE",
-    risk: typeof risk === "function" ? risk : () => risk,
-    handler: (value, context) => runAgentFilesystemTool(value, context.mode, context.approved),
+    risk: (value) => typeof risk === "function" ? risk(schema.parse(value)) : risk,
+    handler: (value, context) => runAgentFilesystemTool(schema.parse(value), context.mode, context.approved),
   };
 }
 
@@ -54,16 +55,54 @@ const terminalSchema = z.object({
   timeoutMs: z.number().int().min(1).max(3_600_000).default(120_000),
   env: z.record(z.string(), z.string()).default({}),
 });
-const terminalTool: AgentTool<z.infer<typeof terminalSchema>> = {
+const terminalTool: AgentTool = {
   name: "terminal.exec", description: "Run a non-interactive program in the workspace with bounded output and timeout.",
   schema: terminalSchema,
   parameters: object({ command: string, args: { type: "array", items: string }, cwd: string, timeoutMs: { ...integer, minimum: 1, maximum: 3600000 }, env: { type: "object", additionalProperties: { type: "string" } } }, ["command"]),
-  risk: (value) => analyzeCommandRisk(value.command, value.args).risk,
+  risk: (value) => { const parsed = terminalSchema.parse(value); return analyzeCommandRisk(parsed.command, parsed.args).risk; },
   definitionRisk: "DANGEROUS",
   allowedActors: ["AGENT"], timeoutMs: 3_600_000,
-  handler: (value, context): Promise<ExecResult> => terminalApi.exec({ ...value, actor: "AGENT", approvalMode: context.mode, approved: context.approved }),
+  handler: (value, context): Promise<ExecResult> => terminalApi.exec({ ...terminalSchema.parse(value), actor: "AGENT", approvalMode: context.mode, approved: context.approved }),
 };
 tools.push(terminalTool);
+
+function computerTool(
+  name: string, description: string, schema: z.ZodType, parameters: Record<string, unknown>,
+  risk: AgentRisk | ((value: unknown) => AgentRisk), timeoutMs = 30_000,
+): AgentTool {
+  return {
+    name, description, schema, parameters, allowedActors: ["AGENT"], timeoutMs,
+    definitionRisk: typeof risk === "function" || risk === "DANGEROUS" ? "DANGEROUS" : risk === "SAFE" ? "READ" : "WRITE",
+    risk: (value) => typeof risk === "function" ? risk(value) : risk,
+    handler: (value, context) => computerApi.execute(value as ComputerRequest, context.approved),
+  };
+}
+const op = <T extends string>(value: T) => z.literal(value).default(value);
+const coordinate = z.number().int().min(-32768).max(32767);
+const mouseButton = z.enum(["left", "right", "middle"]);
+const noArgs = () => object({}, []);
+const destructiveHotkey = (value: unknown) => {
+  const keys = ((value as { keys?: string[] }).keys ?? []).map((key) => key.toLowerCase());
+  return (keys.includes("alt") && keys.includes("f4")) || ((keys.includes("ctrl") || keys.includes("control")) && keys.some((key) => ["q", "w", "delete"].includes(key)));
+};
+const sensitiveText = (value: unknown) => /password|passwd|api_key|secret|token|sudo/iu.test((value as { text?: string }).text ?? "");
+
+tools.push(
+  computerTool("computer.get_displays", "List portal-authorized displays and their coordinate bounds.", z.object({ operation: op("get_displays") }), noArgs(), "SAFE"),
+  computerTool("computer.get_active_window", "Read the active window when the desktop exposes this safely.", z.object({ operation: op("get_active_window") }), noArgs(), "SAFE"),
+  computerTool("computer.list_windows", "List windows using stable desktop-provided identifiers when available.", z.object({ operation: op("list_windows") }), noArgs(), "SAFE"),
+  computerTool("computer.screenshot", "Request a user-consented portal screenshot for desktop verification. No OCR is performed.", z.object({ operation: op("screenshot") }), noArgs(), "SAFE", 120_000),
+  computerTool("computer.open_app", "Launch a validated executable directly, without a shell.", z.object({ operation: op("open_app"), application: z.string().regex(/^[A-Za-z0-9._+-]{1,128}$/u), arguments: z.array(z.string().max(1024)).max(32).default([]) }), object({ application: string, arguments: { type: "array", items: string, maxItems: 32 } }, ["application"]), "MODERATE"),
+  computerTool("computer.focus_window", "Focus a window by a stable identifier obtained from list_windows.", z.object({ operation: op("focus_window"), window_id: z.string().min(1).max(128) }), object({ window_id: string }, ["window_id"]), "MODERATE"),
+  computerTool("computer.move_mouse", "Move the pointer to an authorized display coordinate.", z.object({ operation: op("move_mouse"), x: coordinate, y: coordinate }), object({ x: integer, y: integer }, ["x", "y"]), "MODERATE"),
+  computerTool("computer.click", "Click a pointer button, optionally after moving to a coordinate.", z.object({ operation: op("click"), button: mouseButton.default("left"), x: coordinate.optional(), y: coordinate.optional() }).refine((v) => (v.x === undefined) === (v.y === undefined), "x and y must be supplied together"), object({ button: { type: "string", enum: ["left", "right", "middle"] }, x: integer, y: integer }), "MODERATE"),
+  computerTool("computer.double_click", "Double-click a pointer button, optionally at a coordinate.", z.object({ operation: op("double_click"), button: mouseButton.default("left"), x: coordinate.optional(), y: coordinate.optional() }).refine((v) => (v.x === undefined) === (v.y === undefined), "x and y must be supplied together"), object({ button: { type: "string", enum: ["left", "right", "middle"] }, x: integer, y: integer }), "MODERATE"),
+  computerTool("computer.scroll", "Send bounded horizontal or vertical scroll steps.", z.object({ operation: op("scroll"), delta_x: z.number().int().min(-100).max(100).default(0), delta_y: z.number().int().min(-100).max(100).default(0) }), object({ delta_x: integer, delta_y: integer }), "MODERATE"),
+  computerTool("computer.type_text", "Type bounded text into the focused application. Text is redacted from audit records.", z.object({ operation: op("type_text"), text: z.string().max(4096) }), object({ text: string }, ["text"]), (value) => sensitiveText(value) ? "DANGEROUS" : "MODERATE"),
+  computerTool("computer.key_press", "Press and release one named key.", z.object({ operation: op("key_press"), key: z.string().min(1).max(32) }), object({ key: string }, ["key"]), "MODERATE"),
+  computerTool("computer.hotkey", "Press a bounded key combination; destructive shortcuts require approval.", z.object({ operation: op("hotkey"), keys: z.array(z.string().min(1).max(32)).min(2).max(5) }), object({ keys: { type: "array", items: string, minItems: 2, maxItems: 5 } }, ["keys"]), (value) => destructiveHotkey(value) ? "DANGEROUS" : "MODERATE"),
+  computerTool("computer.close_window", "Close a window by stable identifier when supported. Always requires approval.", z.object({ operation: op("close_window"), window_id: z.string().min(1).max(128) }), object({ window_id: string }, ["window_id"]), "DANGEROUS"),
+);
 
 export class ToolRegistry {
   private readonly tools = new Map<string, AgentTool>();

@@ -13,9 +13,9 @@ export class ApprovalManager {
 
   async authorize(mode: Exclude<AgentMode, "ASK">, request: ApprovalRequest): Promise<boolean> {
     if (!this.requiresApproval(mode, request.risk)) return true;
-    this.notify(request);
     return new Promise<boolean>((resolve) => {
       this.pending.set(request.id, (decision) => resolve(decision === "APPROVE_ONCE"));
+      this.notify(request);
     });
   }
 

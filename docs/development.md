@@ -9,11 +9,12 @@ Each phase must inspect existing code, plan, implement, test, build, fix failure
 - Phase 4: IMPLEMENTED / PENDING LINUX CERTIFICATION. Pending Linux Certification checklist is in [platforms.md](platforms.md). Windows is separately pending. See [terminal.md](terminal.md).
 - Phase 5: IMPLEMENTED / PENDING LINUX CERTIFICATION. Independent development may continue while Phase 4 awaits Nobara; final Phase 5 certification requires repairing any Phase 4 Linux failure first. See [tools.md](tools.md).
 - Phase 6: IMPLEMENTED / PENDING LINUX CERTIFICATION. LM Studio and generic OpenAI-compatible providers, discovery, direct chat, streaming, cancellation, capability overrides, and validated display-only tool calls. See [models.md](models.md).
-- Phase 7–11: agent loop, changes/approvals, Git, planner, memory. Phase 7 has not started.
+- Phase 7: IMPLEMENTED / PENDING LINUX AND MODEL INTEGRATION CERTIFICATION. See `agent-engine.md` and `approvals.md`.
+- Local Runtime: IMPLEMENTED / PENDING REAL GGUF CERTIFICATION. GravityForge-managed `llama-server`, model controls, hardware detection, native capability gate, and optional Ollama integration. See [local-runtime.md](local-runtime.md).
+- Phase 8–11: changes UI, Git, advanced planner, and memory. Not started.
 - Phase 12–18: browser, vision, OCR, computer use, agents, and context management.
 - Phase 19–23: workflows, hardening, UX, complete test suite, and releases.
 
 ## Definition of done
 
 A feature is done only when its controls call real behavior, typed errors reach the UI, relevant tests pass, production builds pass, and documentation reflects operational limits. Otherwise it is disabled and labeled by phase.
-

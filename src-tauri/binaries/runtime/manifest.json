@@ -1,0 +1,20 @@
+{
+  "runtimeVersion": "gravityforge-local-runtime-1",
+  "llamaCppVersion": "0.6.0-dev+b11429",
+  "llamaCppCommit": "d81235049384534c167caea52b85a694f6103d14",
+  "buildDate": "2026-10-05",
+  "profiles": [
+    {
+      "os": "linux", "arch": "x86_64", "backend": "cpu",
+      "directory": "linux/x86_64/cpu", "binary": "llama-server",
+      "sha256": "5faf410bbbc00a1b94b09ee01623699f255365628dfa73b1ee552d9e52a2231d",
+      "requiredCompanionLibraries": ["libllama-server-impl.so", "libllama-common.so.0", "libmtmd.so.0", "libllama.so.0", "libggml.so.0", "libggml-base.so.0", "libggml-cpu-x64.so"]
+    },
+    {
+      "os": "linux", "arch": "x86_64", "backend": "vulkan",
+      "directory": "linux/x86_64/vulkan", "binary": "llama-server",
+      "sha256": "5faf410bbbc00a1b94b09ee01623699f255365628dfa73b1ee552d9e52a2231d",
+      "requiredCompanionLibraries": ["libllama-server-impl.so", "libllama-common.so.0", "libmtmd.so.0", "libllama.so.0", "libggml.so.0", "libggml-base.so.0", "libggml-cpu-x64.so", "libggml-vulkan.so"]
+    }
+  ]
+}

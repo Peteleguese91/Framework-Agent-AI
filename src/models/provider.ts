@@ -24,6 +24,8 @@ export class OpenAICompatibleProvider implements ModelProvider {
   capabilities(settings: ProviderSettings) { return settings.capabilities; }
 }
 export class LMStudioProvider extends OpenAICompatibleProvider { override readonly id = "lm-studio" as const; }
+export class GravityForgeLocalProvider extends OpenAICompatibleProvider { override readonly id = "gravityforge-local" as const; }
+export class OllamaProvider extends OpenAICompatibleProvider { override readonly id = "ollama" as const; }
 export class ProviderRegistry {
   private readonly providers = new Map<ProviderSettings["provider"], ModelProvider>();
   register(provider: ModelProvider): void { if (this.providers.has(provider.id)) throw new Error(`Provider already registered: ${provider.id}`); this.providers.set(provider.id, provider); }
@@ -31,5 +33,7 @@ export class ProviderRegistry {
   list(): ModelProvider[] { return [...this.providers.values()]; }
 }
 export const providerRegistry = new ProviderRegistry();
+providerRegistry.register(new GravityForgeLocalProvider());
+providerRegistry.register(new OllamaProvider());
 providerRegistry.register(new LMStudioProvider());
 providerRegistry.register(new OpenAICompatibleProvider());

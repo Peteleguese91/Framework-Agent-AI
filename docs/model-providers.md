@@ -1,13 +1,15 @@
 # Model providers
 
-Phase 6 ships two adapters behind the `ModelProvider` interface:
+The primary adapters behind `ModelProvider` are now:
 
-- `lm-studio`, the default local provider at `http://localhost:1234/v1`;
-- `openai-compatible`, for servers implementing the OpenAI models and chat-completions routes.
+- `gravityforge-local`, the default provider backed by an owned `llama-server` sidecar and internal dynamic endpoint;
+- `ollama`, the optional external runtime through its OpenAI-compatible API.
+
+Legacy `lm-studio` and generic `openai-compatible` identifiers remain readable during migration, but LM Studio is no longer the default or an architectural dependency.
 
 Both use the Rust transport in `src-tauri/src/model`. Discovery reads `GET /models`. Chat uses `POST /chat/completions`, including SSE streaming, cancellation, usage metadata, tool definitions, and `tool_choice`. A temporary connection failure or retryable HTTP response may be retried once when enabled. Timeouts, unavailable models, context overflow, malformed responses, malformed tool calls, and interrupted streams have stable error codes.
 
-Capabilities are explicit settings because compatible servers do not expose a reliable common capability endpoint. Users can override tools, streaming, vision, reasoning, context window, and maximum output values. Disabling streaming makes the direct chat use a normal completion request.
+GravityForge Local capabilities are measured by a real chat, streaming, and structured-tool test. Agent Mode remains unavailable until the structured test passes. External compatible servers retain explicit capability settings because they do not expose a reliable common capability endpoint.
 
 The initial coding profile uses Qwen3-Coder-friendly defaults: temperature `0.7`, top-p `0.8`, top-k `20`, repetition penalty `1.05`, and a `32768` token context setting. The model must be loaded in LM Studio with its non-thinking chat template. LM Studio controls the actual loaded-model context; GravityForge's context value records the selected profile and informs future context management.
 

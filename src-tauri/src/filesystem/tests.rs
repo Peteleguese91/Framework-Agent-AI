@@ -437,10 +437,14 @@ fn permission_errors_are_structured() {
 fn ipc_contract_and_actor_risk() {
     let request: FsToolRequest = serde_json::from_value(serde_json::json!({"actor":"USER","action":{"operation":"read_range","path":"a","startByte":0,"length":10}})).unwrap();
     assert!(matches!(request.actor, ToolActor::User));
+    assert!(authorize(ToolActor::Agent, RiskLevel::Read, Some("AGENT"), false).is_ok());
     assert_eq!(
-        authorize(ToolActor::Agent).unwrap_err().code,
+        authorize(ToolActor::Agent, RiskLevel::Dangerous, Some("AGENT"), false)
+            .unwrap_err()
+            .code,
         FsErrorCode::PermissionDenied
     );
+    assert!(authorize(ToolActor::Agent, RiskLevel::Dangerous, Some("AGENT"), true).is_ok());
     assert!(matches!(
         request.action,
         FsAction::ReadRange { length: 10, .. }

@@ -22,13 +22,11 @@ export class ProviderTurnRunner implements ModelTurnRunner {
     try {
       const result = new Promise<AgentTurnResult>((resolve, reject) => {
         void listen<CompleteEvent>("model-stream-complete", ({ payload }) => {
-          if (expected && payload.requestId !== expected) return;
-          expected = payload.requestId;
+          if (payload.requestId !== expected) return;
           resolve({ message: { role: "assistant", content: payload.content, toolCalls: payload.toolCalls }, toolCalls: payload.toolCalls });
         }).then((unlisten) => unlisteners.push(unlisten), reject);
         void listen<ErrorEvent>("model-stream-error", ({ payload }) => {
-          if (expected && payload.requestId !== expected) return;
-          expected = payload.requestId;
+          if (payload.requestId !== expected) return;
           reject(normalizeModelError(payload.error));
         }).then((unlisten) => unlisteners.push(unlisten), reject);
       });

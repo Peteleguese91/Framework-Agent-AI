@@ -1,16 +1,19 @@
 import { useState } from "react";
 import { useModelStore } from "../models/modelStore";
 import { useAgentStore } from "./agentStore";
+import { ComputerControl } from "../computer/ComputerControl";
+import { VoicePanel } from "../voice/VoicePanel";
 
 export function AgentPanel() {
   const agent = useAgentStore();
-  if (agent.mode !== "ASK") return <AgentTaskPanel />;
   const { messages, settings, connection, generating, usage, error, send, cancel, openSettings, clearError } = useModelStore();
   const [draft, setDraft] = useState("");
+  if (agent.mode !== "ASK") return <AgentTaskPanel />;
   const submit = () => { const value = draft; setDraft(""); void send(value); };
   return (
     <aside className="side-panel agent-panel">
       <div className="panel-heading"><span>CHAT</span><button onClick={openSettings} title="Model settings">•••</button></div>
+      <VoicePanel />
       {messages.length === 0 ? <div className="agent-empty">
         <div className="pulse-orb" />
         <h2>{settings.model ? settings.model : "Ready when connected"}</h2>
@@ -35,6 +38,8 @@ function AgentTaskPanel() {
   };
   return <aside className="side-panel agent-panel">
     <div className="panel-heading"><span>{mode} ENGINE</span>{task && !active ? <button onClick={clear}>New</button> : null}</div>
+    <ComputerControl />
+    <VoicePanel />
     {!task ? <div className="agent-empty"><div className="pulse-orb"/><h2>Controlled autonomous loop</h2><p>Set a goal. GravityForge will inspect, act, observe, and verify through the registered tools.</p></div> : <>
       <section className="agent-task-summary"><small>GOAL</small><strong>{task.goal}</strong><span className={`agent-status ${task.status.toLowerCase()}`}>{task.status.replaceAll("_", " ")}</span></section>
       <section className="agent-plan"><small>PLAN</small>{task.steps.map((step) => <div key={step.id} className={step.status.toLowerCase()}><span>{step.status === "DONE" ? "✓" : step.status === "RUNNING" ? "●" : "○"}</span>{step.title}</div>)}</section>

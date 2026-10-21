@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { LMStudioProvider, OpenAICompatibleProvider, ProviderRegistry } from "./provider";
+import { GravityForgeLocalProvider, LMStudioProvider, OllamaProvider, OpenAICompatibleProvider, ProviderRegistry } from "./provider";
 import { DEFAULT_SETTINGS } from "./types";
 
 describe("provider registry", () => {
@@ -10,6 +10,14 @@ describe("provider registry", () => {
     expect(registry.get("lm-studio").id).toBe("lm-studio");
     expect(registry.list()).toHaveLength(2);
     expect(() => registry.register(new LMStudioProvider())).toThrow("already registered");
+  });
+
+  it("exposes GravityForge Local and Ollama as first-class providers", () => {
+    const registry = new ProviderRegistry();
+    registry.register(new GravityForgeLocalProvider());
+    registry.register(new OllamaProvider());
+    expect(registry.get("gravityforge-local").id).toBe("gravityforge-local");
+    expect(registry.get("ollama").id).toBe("ollama");
   });
 
   it("uses manual capability overrides", () => {

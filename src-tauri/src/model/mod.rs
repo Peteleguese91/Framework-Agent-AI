@@ -1,3 +1,4 @@
+use crate::local_runtime::LocalRuntimeManager;
 use futures_util::StreamExt;
 use reqwest::{Client, StatusCode, Url};
 use serde::{Deserialize, Serialize};
@@ -241,6 +242,24 @@ fn endpoint(config: &ProviderConfig, resource: &str) -> Result<Url, ModelError> 
     })
 }
 
+fn resolve_provider_config(
+    config: &ProviderConfig,
+    local_runtime: &LocalRuntimeManager,
+) -> Result<ProviderConfig, ModelError> {
+    if config.provider != "gravityforge-local" {
+        return Ok(config.clone());
+    }
+    let (base_url, model) = local_runtime
+        .endpoint_if_ready()
+        .map_err(|message| ModelError::new(ModelErrorCode::ModelUnavailable, message))?;
+    let mut resolved = config.clone();
+    resolved.base_url = base_url;
+    if resolved.model.as_deref().map_or(true, str::is_empty) {
+        resolved.model = Some(model);
+    }
+    Ok(resolved)
+}
+
 fn client(config: &ProviderConfig) -> Result<Client, ModelError> {
     Client::builder()
         .connect_timeout(Duration::from_secs(10))
@@ -285,7 +304,7 @@ fn classify_http_error(status: StatusCode, body: &str) -> ModelError {
     } else {
         ModelErrorCode::HttpError
     };
-    let message = serde_json::from_str::<Value>(&body)
+    let message = serde_json::from_str::<Value>(body)
         .ok()
         .and_then(|value| {
             value
@@ -490,13 +509,17 @@ fn validate_received_tools(
                     format!("Model requested unknown tool {}", call.function.name),
                 )
             })?;
-        validate_schema_value(&call.function.arguments, &definition.parameters, "$arguments")
-            .map_err(|detail| {
-                ModelError::new(
-                    ModelErrorCode::MalformedToolCall,
-                    format!("Tool call {} is invalid: {detail}", call.function.name),
-                )
-            })?;
+        validate_schema_value(
+            &call.function.arguments,
+            &definition.parameters,
+            "$arguments",
+        )
+        .map_err(|detail| {
+            ModelError::new(
+                ModelErrorCode::MalformedToolCall,
+                format!("Tool call {} is invalid: {detail}", call.function.name),
+            )
+        })?;
     }
     Ok(calls)
 }
@@ -756,10 +779,7 @@ fn parse_models(value: &Value) -> Result<Vec<ModelInfo>, ModelError> {
                 .and_then(Value::as_str)
                 .filter(|value| !value.is_empty())
                 .ok_or_else(|| {
-                    ModelError::new(
-                        ModelErrorCode::InvalidResponse,
-                        "Model entry is missing id",
-                    )
+                    ModelError::new(ModelErrorCode::InvalidResponse, "Model entry is missing id")
                 })?;
             Ok(ModelInfo {
                 id: id.to_owned(),
@@ -776,7 +796,9 @@ fn parse_models(value: &Value) -> Result<Vec<ModelInfo>, ModelError> {
 pub async fn model_list_models(
     config: ProviderConfig,
     state: State<'_, ModelState>,
+    local_runtime: State<'_, LocalRuntimeManager>,
 ) -> Result<Vec<ModelInfo>, ModelError> {
+    let config = resolve_provider_config(&config, &local_runtime)?;
     let started = Instant::now();
     log_model_start("list_models", &config);
     let result = async {
@@ -797,10 +819,10 @@ pub async fn model_list_models(
         parse_models(&value)
     }
     .await;
-    let log_result = result
+    let log_result: Result<(), ModelError> = result
         .as_ref()
         .map(|_| ())
-        .map_err(|error| (*error).clone());
+        .map_err(|error: &ModelError| (*error).clone());
     log_model("list_models", &config, &log_result, started, None);
     result
 }
@@ -809,15 +831,20 @@ pub async fn model_list_models(
 pub async fn model_health_check(
     config: ProviderConfig,
     state: State<'_, ModelState>,
+    local_runtime: State<'_, LocalRuntimeManager>,
 ) -> Result<(), ModelError> {
-    model_list_models(config, state).await.map(|_| ())
+    model_list_models(config, state, local_runtime)
+        .await
+        .map(|_| ())
 }
 
 #[tauri::command]
 pub async fn model_chat(
-    request: ChatRequest,
+    mut request: ChatRequest,
     state: State<'_, ModelState>,
+    local_runtime: State<'_, LocalRuntimeManager>,
 ) -> Result<ChatResponse, ModelError> {
+    request.config = resolve_provider_config(&request.config, &local_runtime)?;
     let started = Instant::now();
     log_model_start("chat", &request.config);
     let result = async {
@@ -835,10 +862,8 @@ pub async fn model_chat(
                 "Chat response is missing assistant message",
             )
         })?;
-        let tool_calls = validate_received_tools(
-            parse_tool_calls(message.get("tool_calls"))?,
-            &request.tools,
-        )?;
+        let tool_calls =
+            validate_received_tools(parse_tool_calls(message.get("tool_calls"))?, &request.tools)?;
         Ok(ChatResponse {
             message: ChatMessage {
                 role: MessageRole::Assistant,
@@ -857,10 +882,7 @@ pub async fn model_chat(
         })
     }
     .await;
-    let log_result = result
-        .as_ref()
-        .map(|_| ())
-        .map_err(|error| (*error).clone());
+    let log_result: Result<(), ModelError> = result.as_ref().map(|_| ()).map_err(Clone::clone);
     log_model(
         "chat",
         &request.config,
@@ -876,10 +898,12 @@ pub async fn model_chat(
 
 #[tauri::command]
 pub fn model_stream_chat(
-    request: ChatRequest,
+    mut request: ChatRequest,
     app: AppHandle,
     state: State<'_, ModelState>,
+    local_runtime: State<'_, LocalRuntimeManager>,
 ) -> Result<String, ModelError> {
+    request.config = resolve_provider_config(&request.config, &local_runtime)?;
     let started = Instant::now();
     log_model_start("stream_chat", &request.config);
     if let Err(error) = chat_body(&request, true) {

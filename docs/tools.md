@@ -2,7 +2,7 @@
 
 Status: **IMPLEMENTED / PENDING LINUX CERTIFICATION**. Phase 4 remains **IMPLEMENTED / PENDING LINUX CERTIFICATION**. Final Phase 5 certification on Nobara requires repairing any Phase 4 Linux failure first.
 
-The Rust command `filesystem_tool` accepts a typed `{ actor, action }` request and returns a tagged result or `{ code, message }` error. `src/tools/filesystem.ts` validates the same contract with Zod and lists version 1 risk metadata. Every invocation is logged with category `FS_TOOL`, operation, actor, risk, outcome, error code, and duration. Logs omit paths, file content, search terms, and patch text. Rust rejects every `AGENT` invocation until the approval policy exists.
+The Rust command `filesystem_tool` accepts a typed request and returns a tagged result or `{ code, message }` error. `src/tools/filesystem.ts` validates the same contract with Zod and lists version 1 risk metadata. Every invocation is logged without paths or contents. Phase 7 agents may call it with a valid agent mode; dangerous actions additionally require explicit one-time approval.
 
 | Operation | Behavior | Risk |
 | --- | --- | --- |
@@ -23,7 +23,7 @@ The Rust command `filesystem_tool` accepts a typed `{ actor, action }` request a
 
 All filesystem paths are relative to the active canonical workspace. Absolute paths, parent traversal and symlink escapes are rejected. Direct mutation of symlink entries is unavailable. `stat` can report a symlink entry without reading its target. Recursive copy and delete reject nested symlinks. Search and glob do not follow links; they scan at most 10,000 entries and return at most 200 results. Full text reads, writes and patches cap at 2 MiB. `read_range` permits access to larger text files but a range must begin and end on UTF-8 boundaries. Binary data is rejected by text operations. Patch preserves LF or CRLF line endings; mixed or CR-only line endings are rejected.
 
-Mutating an existing text file uses a temporary file in the destination directory and preserves its permissions. Linux uses `renameat2(RENAME_NOREPLACE)` for moves and publishing copied directories. Windows uses a destination check followed by rename; Windows native certification remains pending. Content comparison and symlink checks are repeated immediately before operations, but concurrent writes from other app paths can still race because the path lease manager belongs to a later phase. No agent or model is connected to these tools yet.
+Mutating an existing text file uses a temporary file in the destination directory and preserves its permissions. Linux uses `renameat2(RENAME_NOREPLACE)` for moves and publishing copied directories. Windows uses a destination check followed by rename; Windows native certification remains pending. Content comparison and symlink checks are repeated immediately before operations, but concurrent writes from other app paths can still race because the path lease manager belongs to a later phase. Phase 7 connects these operations through the central ToolRegistry; interactive PTYs remain user-only.
 
 ## Nobara verification
 
